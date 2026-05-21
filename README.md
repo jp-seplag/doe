@@ -67,8 +67,8 @@ DOE/
 
 ### 1. Pré-requisitos
 
-- Python 3.13+
-- Docker e Docker Compose
+- Python 3.11+
+- Docker e Docker Compose *(opcional no modo offline)*
 - Windows (para o agendamento automático via `setup_task.ps1`)
 
 ### 2. Clonar, criar venv e instalar dependências
@@ -111,6 +111,17 @@ O schema é carregado automaticamente na primeira inicialização a partir de `s
 > ```powershell
 > docker exec -i doe_pe_postgres psql -U postgres -d doe_pe < sql/schema.sql
 > ```
+
+### 4.1 Modo offline (sem Docker/PostgreSQL)
+
+Para desenvolvimento local sem banco Docker, use SQLite:
+
+```env
+OFFLINE_MODE=1
+OFFLINE_DB_PATH=data/doe_offline.db
+```
+
+Com isso, `ingest.py`, `search.py` e `app.py` passam a usar o banco SQLite automaticamente.
 
 ### 5. (Opcional) Configurar download automático diário
 

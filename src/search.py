@@ -1,38 +1,54 @@
 """
-Exemplos de consulta ao banco — full-text search e busca estruturada.
-
-Uso interativo:
-    python src/search.py "crédito suplementar educação"
-    python src/search.py --tipo ato_pessoal --nome "JEFFERSON"
+Busca no DOE-PE com suporte a PostgreSQL e SQLite (offline).
 """
 
-import sys
+from __future__ import annotations
+
 import argparse
 import unicodedata
-import psycopg2
-import psycopg2.extras
-from urllib.parse import urlparse
-from config import DATABASE_URL
+
+from database import IS_SQLITE, get_conn
 
 
-def _conn_params() -> dict:
-    p = urlparse(DATABASE_URL)
-    return {
-        "host":     p.hostname or "localhost",
-        "port":     p.port or 5432,
-        "dbname":   (p.path or "/doe_pe").lstrip("/"),
-        "user":     p.username or "postgres",
-        "password": p.password or "",
-        "client_encoding": "utf8",
-    }
-
-
-def _conn():
-    return psycopg2.connect(**_conn_params(), cursor_factory=psycopg2.extras.RealDictCursor)
+def _rows(cur):
+    data = cur.fetchall()
+    if not data:
+        return []
+    if isinstance(data[0], dict):
+        return data
+    return [dict(r) for r in data]
 
 
 def fulltext_search(query: str, limit: int = 20) -> list:
-    """Busca full-text em ementa + texto_completo com ranking."""
+    """Busca textual em ementa + texto completo."""
+    if IS_SQLITE:
+        terms = [t.strip() for t in query.split() if t.strip()]
+        where = " AND ".join(["(lower(coalesce(a.ementa,'')) LIKE ? OR lower(a.texto_completo) LIKE ?)"] * len(terms))
+        params = []
+        for t in terms:
+            k = f"%{t.lower()}%"
+            params.extend([k, k])
+        sql = f"""
+            SELECT
+                a.id,
+                pub.data_publicacao,
+                a.tipo,
+                a.numero,
+                a.secretaria,
+                a.ementa,
+                substr(a.texto_completo, 1, 300) AS trecho
+            FROM atos a
+            JOIN publicacoes pub ON pub.id = a.publicacao_id
+            WHERE {where if where else '1=1'}
+            ORDER BY pub.data_publicacao DESC, a.id DESC
+            LIMIT ?
+        """
+        params.append(limit)
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(sql, params)
+            return _rows(cur)
+
     sql = """
         SELECT
             a.id,
@@ -53,40 +69,50 @@ def fulltext_search(query: str, limit: int = 20) -> list:
         ORDER BY rank DESC
         LIMIT %(limit)s
     """
-    with _conn() as conn:
-        with conn.cursor() as cur:
-            # Normaliza acentos no Python (NFD → ASCII) e monta tsquery com prefixo
-            def _strip_accents(s: str) -> str:
-                return unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode("ascii")
 
-            tsq = " & ".join(
-                f"{_strip_accents(w)}:*"
-                for w in query.split()
-                if w
-            )
-            cur.execute(sql, {"q": tsq, "limit": limit})
-            return cur.fetchall()
+    def _strip_accents(s: str) -> str:
+        return unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode("ascii")
+
+    tsq = " & ".join(f"{_strip_accents(w)}:*" for w in query.split() if w)
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(sql, {"q": tsq, "limit": limit})
+        return _rows(cur)
 
 
-def busca_pessoal(nome: str = None, matricula: str = None,
-                  tipo_acao: str = None, orgao: str = None,
-                  limit: int = 50) -> list:
-    """Busca na tabela de atos pessoais."""
+def busca_pessoal(nome: str = None, matricula: str = None, tipo_acao: str = None, orgao: str = None, limit: int = 50) -> list:
     conditions = []
-    params = {}
+    params = [] if IS_SQLITE else {}
 
     if nome:
-        conditions.append("ap.nome ILIKE %(nome)s")
-        params["nome"] = f"%{nome}%"
+        if IS_SQLITE:
+            conditions.append("lower(ap.nome) LIKE ?")
+            params.append(f"%{nome.lower()}%")
+        else:
+            conditions.append("ap.nome ILIKE %(nome)s")
+            params["nome"] = f"%{nome}%"
     if matricula:
-        conditions.append("ap.matricula = %(matricula)s")
-        params["matricula"] = matricula
+        if IS_SQLITE:
+            conditions.append("ap.matricula = ?")
+            params.append(matricula)
+        else:
+            conditions.append("ap.matricula = %(matricula)s")
+            params["matricula"] = matricula
     if tipo_acao:
-        conditions.append("ap.tipo_acao = %(tipo_acao)s")
-        params["tipo_acao"] = tipo_acao
+        if IS_SQLITE:
+            conditions.append("ap.tipo_acao = ?")
+            params.append(tipo_acao)
+        else:
+            conditions.append("ap.tipo_acao = %(tipo_acao)s")
+            params["tipo_acao"] = tipo_acao
     if orgao:
-        conditions.append("ap.orgao ILIKE %(orgao)s")
-        params["orgao"] = f"%{orgao}%"
+        if IS_SQLITE:
+            conditions.append("lower(ap.orgao) LIKE ?")
+            params.append(f"%{orgao.lower()}%")
+        else:
+            conditions.append("ap.orgao ILIKE %(orgao)s")
+            params["orgao"] = f"%{orgao}%"
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
@@ -107,36 +133,49 @@ def busca_pessoal(nome: str = None, matricula: str = None,
         JOIN publicacoes pub ON pub.id = a.publicacao_id
         {where}
         ORDER BY pub.data_publicacao DESC, ap.nome
-        LIMIT {limit}
+        LIMIT {int(limit)}
     """
-    with _conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            return cur.fetchall()
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(sql, params)
+        return _rows(cur)
 
 
-def busca_decretos(orgao: str = None, tipo_credito: str = None,
-                   data_inicio: str = None, data_fim: str = None,
-                   limit: int = 50) -> list:
+def busca_decretos(orgao: str = None, tipo_credito: str = None, data_inicio: str = None, data_fim: str = None, limit: int = 50) -> list:
     conditions = ["a.tipo = 'decreto'"]
-    params = {}
+    params = [] if IS_SQLITE else {}
 
     if orgao:
-        conditions.append("a.orgao ILIKE %(orgao)s")
-        params["orgao"] = f"%{orgao}%"
+        if IS_SQLITE:
+            conditions.append("lower(a.orgao) LIKE ?")
+            params.append(f"%{orgao.lower()}%")
+        else:
+            conditions.append("a.orgao ILIKE %(orgao)s")
+            params["orgao"] = f"%{orgao}%"
     if tipo_credito:
-        conditions.append("co.tipo_credito = %(tipo_credito)s")
-        params["tipo_credito"] = tipo_credito
+        if IS_SQLITE:
+            conditions.append("co.tipo_credito = ?")
+            params.append(tipo_credito)
+        else:
+            conditions.append("co.tipo_credito = %(tipo_credito)s")
+            params["tipo_credito"] = tipo_credito
     if data_inicio:
-        conditions.append("pub.data_publicacao >= %(data_inicio)s")
-        params["data_inicio"] = data_inicio
+        if IS_SQLITE:
+            conditions.append("pub.data_publicacao >= ?")
+            params.append(data_inicio)
+        else:
+            conditions.append("pub.data_publicacao >= %(data_inicio)s")
+            params["data_inicio"] = data_inicio
     if data_fim:
-        conditions.append("pub.data_publicacao <= %(data_fim)s")
-        params["data_fim"] = data_fim
+        if IS_SQLITE:
+            conditions.append("pub.data_publicacao <= ?")
+            params.append(data_fim)
+        else:
+            conditions.append("pub.data_publicacao <= %(data_fim)s")
+            params["data_fim"] = data_fim
 
-    join = "LEFT JOIN creditos_orcamentarios co ON co.ato_id = a.id"
     where = "WHERE " + " AND ".join(conditions)
-
     sql = f"""
         SELECT
             a.id AS ato_id,
@@ -149,15 +188,16 @@ def busca_decretos(orgao: str = None, tipo_credito: str = None,
             co.fonte_recurso
         FROM atos a
         JOIN publicacoes pub ON pub.id = a.publicacao_id
-        {join}
+        LEFT JOIN creditos_orcamentarios co ON co.ato_id = a.id
         {where}
         ORDER BY pub.data_publicacao DESC
-        LIMIT {limit}
+        LIMIT {int(limit)}
     """
-    with _conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            return cur.fetchall()
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(sql, params)
+        return _rows(cur)
 
 
 def _print_rows(rows: list, title: str = "") -> None:
@@ -190,8 +230,10 @@ if __name__ == "__main__":
         _print_rows(rows, f'Full-text: "{args.query}"')
     elif args.nome or args.matricula or args.tipo_acao:
         rows = busca_pessoal(
-            nome=args.nome, matricula=args.matricula,
-            tipo_acao=args.tipo_acao, orgao=args.orgao,
+            nome=args.nome,
+            matricula=args.matricula,
+            tipo_acao=args.tipo_acao,
+            orgao=args.orgao,
             limit=args.limite,
         )
         _print_rows(rows, "Busca pessoal")

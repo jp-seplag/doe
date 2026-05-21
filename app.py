@@ -5,7 +5,6 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 import streamlit as st
 import pandas as pd
-import psycopg2.extras
 from database import get_conn
 from search import fulltext_search, busca_pessoal, busca_decretos
 
@@ -19,27 +18,45 @@ st.caption("Poder Executivo — consulta ao acervo ingerido")
 
 def _busca_ato(ato_id: int) -> dict | None:
     with get_conn() as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("""
+        cur = conn.cursor()
+        cur.execute(
+            """
+                SELECT a.*, pub.data_publicacao, pub.numero_edicao, pub.total_paginas
+                FROM atos a
+                JOIN publicacoes pub ON pub.id = a.publicacao_id
+                WHERE a.id = ?
+            """ if hasattr(conn, "row_factory") else """
                 SELECT a.*, pub.data_publicacao, pub.numero_edicao, pub.total_paginas
                 FROM atos a
                 JOIN publicacoes pub ON pub.id = a.publicacao_id
                 WHERE a.id = %s
-            """, (ato_id,))
-            row = cur.fetchone()
-            if not row:
-                return None
-            ato = dict(row)
+            """,
+            (ato_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        ato = dict(row)
 
-            if ato["tipo"] == "ato_pessoal":
-                cur.execute("SELECT * FROM atos_pessoais WHERE ato_id = %s", (ato_id,))
-                ato["_pessoal"] = [dict(r) for r in cur.fetchall()]
-            elif ato["tipo"] == "decreto":
-                cur.execute("SELECT * FROM creditos_orcamentarios WHERE ato_id = %s", (ato_id,))
-                ato["_creditos"] = [dict(r) for r in cur.fetchall()]
-            elif ato["tipo"] == "decisao_tributaria":
-                cur.execute("SELECT * FROM decisoes_tributarias WHERE ato_id = %s", (ato_id,))
-                ato["_decisoes"] = [dict(r) for r in cur.fetchall()]
+        if ato["tipo"] == "ato_pessoal":
+            cur.execute(
+                "SELECT * FROM atos_pessoais WHERE ato_id = ?" if hasattr(conn, "row_factory") else "SELECT * FROM atos_pessoais WHERE ato_id = %s",
+                (ato_id,),
+            )
+            ato["_pessoal"] = [dict(r) for r in cur.fetchall()]
+        elif ato["tipo"] == "decreto":
+            cur.execute(
+                "SELECT * FROM creditos_orcamentarios WHERE ato_id = ?" if hasattr(conn, "row_factory") else "SELECT * FROM creditos_orcamentarios WHERE ato_id = %s",
+                (ato_id,),
+            )
+            ato["_creditos"] = [dict(r) for r in cur.fetchall()]
+        elif ato["tipo"] == "decisao_tributaria":
+            cur.execute(
+                "SELECT * FROM decisoes_tributarias WHERE ato_id = ?" if hasattr(conn, "row_factory") else "SELECT * FROM decisoes_tributarias WHERE ato_id = %s",
+                (ato_id,),
+            )
+            ato["_decisoes"] = [dict(r) for r in cur.fetchall()]
+        cur.close()
     return ato
 
 
@@ -121,13 +138,14 @@ def _modal_detalhe(ato_id: int):
 @st.cache_data(ttl=60)
 def _stats():
     with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM publicacoes")
-            edicoes = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM atos")
-            atos = cur.fetchone()[0]
-            cur.execute("SELECT MIN(data_publicacao), MAX(data_publicacao) FROM publicacoes")
-            inicio, fim = cur.fetchone()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM publicacoes")
+        edicoes = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM atos")
+        atos = cur.fetchone()[0]
+        cur.execute("SELECT MIN(data_publicacao), MAX(data_publicacao) FROM publicacoes")
+        inicio, fim = cur.fetchone()
+        cur.close()
     return edicoes, atos, inicio, fim
 
 try:

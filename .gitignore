@@ -49,6 +49,10 @@ pgdata/
 *.sql.gz
 *.backup
 
+# SQLite offline
+*.db
+data/
+
 # ─── IDEs e editores ───────────────────────────────────────────────────────────
 .vscode/
 .idea/

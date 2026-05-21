@@ -200,8 +200,9 @@ def ingest(pdf_path: Path, reprocess: bool = True) -> None:
             except Exception as e:
                 print(f"  [AVISO] Erro ao salvar ato pos={seg['posicao']}: {e}")
                 conn.rollback()
-                # Reabre a transação para continuar
-                conn.autocommit = False
+                # Reabre a transação para continuar (PostgreSQL)
+                if hasattr(conn, "autocommit"):
+                    conn.autocommit = False
 
     print(f"  Salvo: {saved}/{len(segments)} atos — publicacao_id={pub_id}")
 
