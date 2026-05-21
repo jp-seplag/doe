@@ -56,6 +56,18 @@ class OfflineSmokeTests(unittest.TestCase):
         self.assertGreaterEqual(pub_count, 1)
         self.assertGreaterEqual(atos_count, 1)
 
+    def test_04_busca_pessoal_filters(self):
+        # Confirma que há atos pessoais extraídos e que o filtro por nome funciona
+        rows = self.search.busca_pessoal(nome="maria", limit=10)
+        self.assertGreater(len(rows), 0)
+        self.assertTrue(any("maria" in (r.get("nome") or "").lower() for r in rows))
+
+    def test_05_busca_decretos_filters(self):
+        # Confirma busca de decretos por tipo de crédito
+        rows = self.search.busca_decretos(tipo_credito="suplementar", limit=10)
+        self.assertGreater(len(rows), 0)
+        self.assertTrue(all((r.get("tipo_credito") or "").lower() == "suplementar" for r in rows))
+
 
 if __name__ == "__main__":
     unittest.main()
