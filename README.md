@@ -135,6 +135,22 @@ powershell -ExecutionPolicy Bypass -File setup_task.ps1
 
 ## Uso
 
+### Fluxo rápido offline (desenvolvimento local)
+
+```bash
+make dev-offline
+make ingest-offline PDF=executivo/PoderExecutivo20260520.pdf
+make search-offline QUERY="educação crédito"
+make streamlit-offline
+```
+
+Para validar rapidamente o modo offline:
+
+```bash
+make test-offline
+```
+
+
 ### Download de edições
 
 ```powershell
