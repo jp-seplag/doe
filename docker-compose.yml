@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: doe_pe_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: doe_pe
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+
+volumes:
+  pgdata:

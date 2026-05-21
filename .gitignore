@@ -1,0 +1,65 @@
+# ─── Ambiente e segredos ───────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+# Manter apenas o exemplo de referência
+!.env/.env.example
+
+# ─── PDFs baixados ─────────────────────────────────────────────────────────────
+# Arquivos grandes gerados automaticamente pelo downloader
+executivo/
+*.pdf
+
+# ─── Logs ──────────────────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ─── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+ENV/
+.virtualenv/
+
+# Cobertura de testes
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# ─── Dados e banco de dados ────────────────────────────────────────────────────
+# Volume do Docker (se mapeado localmente)
+pgdata/
+*.dump
+*.sql.gz
+*.backup
+
+# ─── IDEs e editores ───────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ─── Claude Code ───────────────────────────────────────────────────────────────
+# Manter settings compartilhadas, ignorar apenas as locais
+.claude/settings.local.json
+
+# ─── Windows ───────────────────────────────────────────────────────────────────
+desktop.ini
+ehthumbs.db
