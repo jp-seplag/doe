@@ -3,6 +3,8 @@
 .env.local
 .env.*.local
 # Manter apenas o exemplo de referência
+!.env/
+.env/.env
 !.env/.env.example
 
 # ─── PDFs baixados ─────────────────────────────────────────────────────────────

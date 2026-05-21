@@ -130,13 +130,25 @@ def _stats():
             inicio, fim = cur.fetchone()
     return edicoes, atos, inicio, fim
 
-edicoes, total_atos, inicio, fim = _stats()
+try:
+    edicoes, total_atos, inicio, fim = _stats()
+    db_error = None
+except Exception as e:  # noqa: BLE001
+    edicoes, total_atos, inicio, fim = 0, 0, None, None
+    db_error = str(e)
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Edições", edicoes)
 col2.metric("Total de atos", f"{total_atos:,}")
-col3.metric("Início", str(inicio))
-col4.metric("Última edição", str(fim))
+col3.metric("Início", str(inicio) if inicio else "—")
+col4.metric("Última edição", str(fim) if fim else "—")
+
+if db_error:
+    st.warning(
+        "Banco de dados indisponível no momento. "
+        "Suba/configure o PostgreSQL para habilitar buscas e métricas reais."
+    )
+    st.caption(f"Detalhe técnico: {db_error}")
 
 st.divider()
 
